@@ -162,9 +162,13 @@ class IPerf3Engine:
                     break
             if ok:
                 return cur
-        raise IPerf3EngineError(f"Unable to locate required iperf3 field. paths={paths!r}")
+        raise IPerf3EngineError(
+            f"Unable to locate required iperf3 field. paths={paths!r}"
+        )
 
-    def _get_optional_first(self, data: dict[str, Any], *paths: tuple[str, ...]) -> Any | None:
+    def _get_optional_first(
+        self, data: dict[str, Any], *paths: tuple[str, ...]
+    ) -> Any | None:
         """Return first matching field value or None if all paths are missing.
 
         Args:
@@ -225,7 +229,9 @@ class IPerf3Engine:
             ),
         }
 
-    def run_tcp(self, server_ip: str, duration: int = 30, parallel: int = 4) -> dict[str, Any]:
+    def run_tcp(
+        self, server_ip: str, duration: int = 30, parallel: int = 4
+    ) -> dict[str, Any]:
         """Run an iperf3 TCP throughput test.
 
         Args:
@@ -268,7 +274,9 @@ class IPerf3Engine:
         retransmits = int(retransmits_raw) if retransmits_raw is not None else 0
 
         duration_raw = metrics.get("duration_sec")
-        duration_sec = float(duration_raw) if duration_raw is not None else float(duration)
+        duration_sec = (
+            float(duration_raw) if duration_raw is not None else float(duration)
+        )
 
         return {
             "bitrate_bps": bitrate_bps,
@@ -341,7 +349,9 @@ class IPerf3Engine:
         jitter_ms = float(jitter_ms_raw) if jitter_ms_raw is not None else 0.0
 
         duration_raw = metrics.get("duration_sec")
-        duration_sec = float(duration_raw) if duration_raw is not None else float(duration)
+        duration_sec = (
+            float(duration_raw) if duration_raw is not None else float(duration)
+        )
 
         return {
             "bitrate_bps": bitrate_bps,
@@ -384,11 +394,9 @@ class IPerf3Engine:
             )
         return results
 
+
 if __name__ == "__main__":
-    ssh_options = [
-        "-i",
-        "/home/jimmy/.ssh/id_gen"
-    ]
+    ssh_options = ["-i", "/home/jimmy/.ssh/id_gen"]
     engine = IPerf3Engine(ssh_options=ssh_options)
     results = engine.run_tcp("172.16.0.2", duration=3, parallel=4)
     print(results)
@@ -396,5 +404,7 @@ if __name__ == "__main__":
     results = engine.run_udp("172.16.0.2", bitrate="500M", duration=3, parallel=4)
     print(results)
 
-    results = engine.run_stepwise_udp("172.16.0.2", bitrate_steps=["500M", "1G", "2G"], duration=3)
+    results = engine.run_stepwise_udp(
+        "172.16.0.2", bitrate_steps=["500M", "1G", "2G"], duration=3
+    )
     print(results)
