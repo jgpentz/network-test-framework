@@ -601,16 +601,16 @@ class ScapyEngine:
 if __name__ == "__main__":
     engine = ScapyEngine(ssh_key_path="/home/jimmy/.ssh/test-framework")
     engine.deploy_scripts()
-    # capture = engine.send_and_capture(
-    #     interface="ens18",
-    #     src_mac="bc:24:11:11:85:0c",
-    #     dst_mac="bc:24:11:0f:6a:d6",
-    #     src_ip="172.16.0.1",
-    #     dst_ip="172.16.0.2",
-    #     protocol="tcp",
-    #     size=100,
-    #     count=1,
-    # )
+    capture = engine.send_and_capture(
+        interface="ens18",
+        src_mac="02:00:00:00:00:01",
+        dst_mac="bc:24:11:0f:6a:d6",
+        src_ip="172.16.0.1",
+        dst_ip="172.16.0.2",
+        protocol="tcp",
+        size=100,
+        count=1,
+    )
     # print(capture)
 
     # # Test ping
@@ -653,15 +653,15 @@ if __name__ == "__main__":
 
     # print(capture)
 
-    result = engine.send_and_capture(
-        interface="ens18",
-        src_mac="bc:24:11:11:85:0c",
-        dst_mac="bc:24:11:0f:6a:d6",
-        src_ip="172.16.0.1",
-        dst_ip="172.16.0.2",
-        protocol="udp",
-        size=9000,
-        count=5,
-        deploy=False,
-    )
-    print(result)
+    # result = engine.send_and_capture(
+    #     interface="ens18",
+    #     src_mac="bc:24:11:11:85:0c",
+    #     dst_mac="bc:24:11:0f:6a:d6",
+    #     src_ip="172.16.0.1",
+    #     dst_ip="172.16.0.2",
+    #     protocol="udp",
+    #     size=9000,
+    #     count=1,
+    #     deploy=False,
+    # )
+    # print(result)
