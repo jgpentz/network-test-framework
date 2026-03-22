@@ -2,10 +2,9 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from framework.tests.rfc2544 import throughput, latency, frame_loss, back_to_back
+from framework.tests.rfc2544 import throughput
 from framework.traffic.iperf3_engine import IPerf3Engine
-from framework.traffic.scapy_engine import ScapyEngine
-from framework.telemetry.cisco_snmp import poll_interface_counters
+
 
 
 def main() -> None:
@@ -30,5 +29,6 @@ def main() -> None:
     # result = back_to_back(engine, "172.16.0.2")
     # print(result)
 
+
 if __name__ == "__main__":
-    main()  
+    main()

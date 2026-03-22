@@ -40,7 +40,18 @@ from framework.tests.rfc2544 import (
         (1_234_000, "1.23M"),
         (500, "500"),
     ],
-    ids=["1G", "2G", "10G", "500M", "950M", "100M", "1.5G-as-M", "750K", "1.23M", "500bps"],
+    ids=[
+        "1G",
+        "2G",
+        "10G",
+        "500M",
+        "950M",
+        "100M",
+        "1.5G-as-M",
+        "750K",
+        "1.23M",
+        "500bps",
+    ],
 )
 def test_bps_to_iperf_bitrate(bps: float, expected: str) -> None:
     assert bps_to_iperf_bitrate(bps) == expected
@@ -192,9 +203,7 @@ def test_latency_structure() -> None:
         latency_repeats_per_level=3,
     )
 
-    result = latency(
-        engine, "172.16.0.2", throughput_bps=800_000_000, config=cfg
-    )
+    result = latency(engine, "172.16.0.2", throughput_bps=800_000_000, config=cfg)
 
     assert result["test"] == "latency"
     assert len(result["details"]["results"]) == 3

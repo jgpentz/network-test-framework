@@ -43,7 +43,7 @@ class TelemetryConfig:
 class RFC2544Config:
     """Parameterises all four RFC 2544 benchmarks.
 
-    ``link_capacity_bps`` anchors every %-of-line calculation. 
+    ``link_capacity_bps`` anchors every %-of-line calculation.
     """
 
     link_capacity_bps: float = 1_000_000_000
@@ -94,9 +94,7 @@ def bps_to_iperf_bitrate(bps: float) -> str:
     return str(int(bps))
 
 
-def counter_delta(
-    before: dict[str, Any], after: dict[str, Any]
-) -> dict[str, Any]:
+def counter_delta(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
     """Compute per-key integer difference between two SNMP counter snapshots."""
     delta: dict[str, Any] = {}
     for key in after:
@@ -169,15 +167,15 @@ def throughput(
             evidence.append(result)
 
             lost = result["lost_percent"]
-            trials.append({
-                "iteration": iteration + 1,
-                "offered_bitrate_bps": mid,
-                "offered_bitrate_pct": round(
-                    mid / cfg.link_capacity_bps * 100, 4
-                ),
-                "achieved_bitrate_bps": result["bitrate_bps"],
-                "lost_percent": lost,
-            })
+            trials.append(
+                {
+                    "iteration": iteration + 1,
+                    "offered_bitrate_bps": mid,
+                    "offered_bitrate_pct": round(mid / cfg.link_capacity_bps * 100, 4),
+                    "achieved_bitrate_bps": result["bitrate_bps"],
+                    "lost_percent": lost,
+                }
+            )
 
             if lost == 0.0:
                 best_zero_loss_bps = mid
@@ -248,17 +246,15 @@ def latency(
                 jitter_samples.append(result["jitter_ms"])
 
             avg = statistics.mean(jitter_samples)
-            std = (
-                statistics.stdev(jitter_samples)
-                if len(jitter_samples) > 1
-                else 0.0
+            std = statistics.stdev(jitter_samples) if len(jitter_samples) > 1 else 0.0
+            results.append(
+                {
+                    "load_pct": load_pct,
+                    "jitter_ms_avg": round(avg, 6),
+                    "jitter_ms_std": round(std, 6),
+                    "jitter_ms_samples": jitter_samples,
+                }
             )
-            results.append({
-                "load_pct": load_pct,
-                "jitter_ms_avg": round(avg, 6),
-                "jitter_ms_std": round(std, 6),
-                "jitter_ms_samples": jitter_samples,
-            })
 
     elapsed = time.monotonic() - t0
     return {
@@ -295,11 +291,13 @@ def frame_loss(
     if cfg.frame_loss_bitrate_pcts is not None:
         pct_steps = list(cfg.frame_loss_bitrate_pcts)
     else:
-        pct_steps = list(range(
-            cfg.frame_loss_start_pct,
-            0,
-            -cfg.frame_loss_step_pct,
-        ))
+        pct_steps = list(
+            range(
+                cfg.frame_loss_start_pct,
+                0,
+                -cfg.frame_loss_step_pct,
+            )
+        )
 
     with snapshot_telemetry(telemetry) as telem:
         results: list[dict[str, Any]] = []
@@ -320,11 +318,13 @@ def frame_loss(
             evidence.append(result)
 
             loss_pct = result["lost_percent"]
-            results.append({
-                "bitrate_pct": pct,
-                "bitrate_bps": target_bps,
-                "loss_pct": loss_pct,
-            })
+            results.append(
+                {
+                    "bitrate_pct": pct,
+                    "bitrate_bps": target_bps,
+                    "loss_pct": loss_pct,
+                }
+            )
 
             if loss_pct == 0.0:
                 consecutive_zero += 1
