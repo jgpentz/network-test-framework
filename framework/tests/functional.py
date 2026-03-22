@@ -26,8 +26,6 @@ from framework.telemetry.cisco_snmp import (
 )
 from framework.tests.rfc2544 import (
     TelemetryConfig,
-    bps_to_iperf_bitrate,
-    counter_delta,
     snapshot_telemetry,
 )
 from framework.traffic.iperf3_engine import IPerf3Engine

@@ -5,22 +5,11 @@ All tests use mocked ScapyEngine / IPerf3Engine — no real SSH or network.
 
 from __future__ import annotations
 
-import importlib
 import sys
-import types
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-# When paramiko has been replaced by a stub (e.g. by test_scapy_engine.py),
-# netmiko cannot import paramiko.ssh_exception.  Restore real paramiko so
-# the full import chain (functional → cisco_snmp → netmiko → paramiko) works.
-_paramiko_mod = sys.modules.get("paramiko")
-if _paramiko_mod is not None and not hasattr(_paramiko_mod, "__file__"):
-    del sys.modules["paramiko"]
-    for key in [k for k in sys.modules if k.startswith("paramiko.")]:
-        del sys.modules[key]
 
 from framework.lab_secrets import LabSecrets
 from framework.tests.functional import (
@@ -35,6 +24,15 @@ from framework.tests.functional import (
     vlan_isolation,
 )
 from framework.traffic.scapy_engine import ScapyEngine
+
+# When paramiko has been replaced by a stub (e.g. by test_scapy_engine.py),
+# netmiko cannot import paramiko.ssh_exception.  Restore real paramiko so
+# the full import chain (functional → cisco_snmp → netmiko → paramiko) works.
+_paramiko_mod = sys.modules.get("paramiko")
+if _paramiko_mod is not None and not hasattr(_paramiko_mod, "__file__"):
+    del sys.modules["paramiko"]
+    for key in [k for k in sys.modules if k.startswith("paramiko.")]:
+        del sys.modules[key]
 
 
 # ---------------------------------------------------------------------------

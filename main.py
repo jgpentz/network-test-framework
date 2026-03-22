@@ -1,6 +1,5 @@
 import copy
 import json
-import time
 from datetime import datetime
 from pathlib import Path
 
@@ -105,43 +104,43 @@ def run_functional_tests(
     time = datetime.now().strftime("%Y-%m-%d-%H-%M")
 
     # ----- VLAN Isolation test -----
-    # print("Running VLAN Isolation test...")
-    # vlan_isolation_result = vlan_isolation(engine, config)
-    # vlan_isolation_result_file = Path(f"results/{time}_vlan_isolation.json")
-    # save_result(vlan_isolation_result, vlan_isolation_result_file)
+    print("Running VLAN Isolation test...")
+    vlan_isolation_result = vlan_isolation(engine, config)
+    vlan_isolation_result_file = Path(f"results/{time}_vlan_isolation.json")
+    save_result(vlan_isolation_result, vlan_isolation_result_file)
 
     # ----- MAC Learning test -----
-    # print("Running MAC Learning test...")
-    # mac_learning_result = mac_learning(engine, config)
-    # mac_learning_result_file = Path(f"results/{time}_mac_learning.json")
-    # save_result(mac_learning_result, mac_learning_result_file)
+    print("Running MAC Learning test...")
+    mac_learning_result = mac_learning(engine, config)
+    mac_learning_result_file = Path(f"results/{time}_mac_learning.json")
+    save_result(mac_learning_result, mac_learning_result_file)
 
     # ----- Jumbo Frames test -----
-    # print("Running Jumbo Frames test...")
-    # jumbo_frames_result = jumbo_frames(engine, config)
-    # jumbo_frames_result_file = Path(f"results/{time}_jumbo_frames.json")
-    # save_result(jumbo_frames_result, jumbo_frames_result_file)
+    print("Running Jumbo Frames test...")
+    jumbo_frames_result = jumbo_frames(engine, config)
+    jumbo_frames_result_file = Path(f"results/{time}_jumbo_frames.json")
+    save_result(jumbo_frames_result, jumbo_frames_result_file)
 
     # ----- 802.1Q Tagging test -----
-    # print("Running 802.1Q Tagging test...")
-    # dot1q_tagging_result = dot1q_tagging(engine, config)
-    # dot1q_tagging_result_file = Path(f"results/{time}_dot1q_tagging.json")
-    # save_result(dot1q_tagging_result, dot1q_tagging_result_file)
+    print("Running 802.1Q Tagging test...")
+    dot1q_tagging_result = dot1q_tagging(engine, config)
+    dot1q_tagging_result_file = Path(f"results/{time}_dot1q_tagging.json")
+    save_result(dot1q_tagging_result, dot1q_tagging_result_file)
 
     # ----- STP Convergence test -----
-    # print("Running STP Convergence test...")
-    # telemetry = TelemetryConfig(
-    #     switch_ip="10.0.0.2", community="network-test", interface="GigabitEthernet1/0/5"
-    # )
-    # stp_convergence_result = stp_convergence(
-    #     iperf3_engine,
-    #     "172.16.0.2",
-    #     on_link_failure=on_link_failure,
-    #     config=config,
-    #     telemetry=telemetry,
-    # )
-    # stp_convergence_result_file = Path(f"results/{time}_stp_convergence.json")
-    # save_result(stp_convergence_result, stp_convergence_result_file)
+    print("Running STP Convergence test...")
+    telemetry = TelemetryConfig(
+        switch_ip="10.0.0.2", community="network-test", interface="GigabitEthernet1/0/5"
+    )
+    stp_convergence_result = stp_convergence(
+        iperf3_engine,
+        "172.16.0.2",
+        on_link_failure=on_link_failure,
+        config=config,
+        telemetry=telemetry,
+    )
+    stp_convergence_result_file = Path(f"results/{time}_stp_convergence.json")
+    save_result(stp_convergence_result, stp_convergence_result_file)
 
     # ----- ACL Enforcement test -----
     print("Running ACL Enforcement test...")
@@ -164,7 +163,7 @@ def main() -> None:
         expect_tag_on_wire=False,
     )
 
-    # run_rfc2544_tests(iperf3_engine, rfc2544_config)
+    run_rfc2544_tests(iperf3_engine, rfc2544_config)
     run_functional_tests(scapy_engine, iperf3_engine, functional_test_config)
 
 
