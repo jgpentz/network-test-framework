@@ -170,7 +170,7 @@ def vlan_isolation(
         capture = result["capture_result"]
         # FIXME: vlan match count is not working because the ports are access ports
         # isolation_ok = int(capture.get("vlan_match_count", 0)) == 0
-        isolation_ok = len(capture['packets']) == 0
+        isolation_ok = len(capture["packets"]) == 0
         passed = isolation_ok
         elapsed = time.monotonic() - t0
     finally:
