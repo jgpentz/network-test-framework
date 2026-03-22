@@ -6,17 +6,15 @@ Six ordered tests per plans/tests.md Part 2:
   3. Jumbo Frames      — 9000-byte frames forwarded without errors
   4. 802.1Q Tagging    — VLAN tags preserved/stripped correctly
   5. STP Convergence   — forwarding resumes within threshold after link failure
-  6. ACL Enforcement   — permit/deny rules produce correct forwarding
+  6. ACL Enforcement   — Netmiko ACL denies ``src_ip``, then restore
 """
 
 from __future__ import annotations
 
-import subprocess
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from netmiko import ConnectHandler
@@ -110,9 +108,10 @@ class FunctionalTestConfig:
     stp_duration_sec: int = 60
     link_capacity_bps: float = 1_000_000_000
 
-    # ACL
-    acl_permit_dst_ip: str = "172.16.0.2"
-    acl_deny_dst_ip: str = "172.16.0.99"
+    # ACL (Netmiko: extended ACL on ingress toward the DUT)
+    acl_switch_mgmt_ip: str = "10.0.0.2"
+    acl_ingress_interface: str = "GigabitEthernet1/0/5"
+    acl_name: str = "NTF_ACL_TEST"
 
     capture_timeout: float = 5.0
 
@@ -133,13 +132,14 @@ def vlan_isolation(
     ``status`` field to the unified ``passed`` boolean.
     """
     cfg = config or FunctionalTestConfig()
+    secrets = cfg.lab_secrets or load_lab_secrets()
 
     # FIXME: The host address, and interfaces are hardcoded, this should be configurable.
     device: dict[str, Any] = {
         "device_type": "cisco_ios",
         "host": "10.0.0.2",
-        "username": cfg.lab_secrets.username,
-        "password": cfg.lab_secrets.password,
+        "username": secrets.username,
+        "password": secrets.password,
         "port": 22,
     }
     try:
@@ -209,6 +209,7 @@ def vlan_isolation(
 
 def mac_learning(
     engine: ScapyEngine,
+    switch_ssh: SwitchSSHConfig,
     config: FunctionalTestConfig | None = None,
     telemetry: TelemetryConfig | None = None,
 ) -> dict[str, Any]:
@@ -218,8 +219,6 @@ def mac_learning(
     then sends a single frame and checks that it arrives without flooding.
     """
     cfg = config or FunctionalTestConfig()
-
-    switch_ssh = switch_ssh_from_secrets(host="10.0.0.2", secrets=cfg.lab_secrets)
 
     t0 = time.monotonic()
 
@@ -390,7 +389,7 @@ def dot1q_tagging(
             dst_ip=cfg.dst_ip,
             protocol=cfg.protocol,
             size=cfg.frame_size,
-            vlan=cfg.dot1q_vlan,
+            # vlan=cfg.dot1q_vlan,
             count=1,
             capture_timeout=cfg.capture_timeout,
         )
@@ -444,6 +443,11 @@ def stp_convergence(
     The caller must supply ``on_link_failure`` — without it the test cannot
     trigger a topology change.  Typical implementations: Netmiko
     ``interface shutdown``, or a physical relay toggle.
+
+    FIXME: This test does not work because the iperf is not running in
+    a background thread, so it runs, and then the interface is shutdown/restored.
+    Any bump in traffic after the interface is restored will result in an increase
+    in the TX packets counter, and the test will pass.
     """
     cfg = config or FunctionalTestConfig()
     t0 = time.monotonic()
@@ -455,7 +459,7 @@ def stp_convergence(
         baseline = engine.run_udp(
             server_ip=server_ip,
             bitrate=cfg.stp_bitrate,
-            duration=2,
+            duration=8,
         )
         evidence["baseline"] = baseline
 
@@ -478,8 +482,11 @@ def stp_convergence(
         last_tx = before["tx_packets"]
         deadline = failure_time + cfg.stp_timeout_sec
 
+        i = 0
         while time.monotonic() < deadline:
             time.sleep(cfg.stp_poll_interval_sec)
+            i += 1
+            print(i)
             current = poll_interface_counters(
                 telemetry.switch_ip, telemetry.community, telemetry.interface
             )
@@ -514,85 +521,109 @@ def stp_convergence(
 # ---------------------------------------------------------------------------
 
 
-def _run_playbook(playbook: Path) -> dict[str, Any]:
-    """Run an Ansible playbook and return stdout/stderr/rc."""
-    proc = subprocess.run(
-        ["ansible-playbook", str(playbook)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return {
-        "playbook": str(playbook),
-        "returncode": proc.returncode,
-        "stdout": proc.stdout[:2000],
-        "stderr": proc.stderr[:2000],
+def _netmiko_device(switch_ssh: SwitchSSHConfig) -> dict[str, Any]:
+    """Build Netmiko device dict for Cisco IOS."""
+    device: dict[str, Any] = {
+        "device_type": "cisco_ios",
+        "host": switch_ssh.host,
+        "username": switch_ssh.username,
+        "password": switch_ssh.password,
     }
+    if switch_ssh.secret:
+        device["secret"] = switch_ssh.secret
+    if switch_ssh.key_file:
+        device["key_file"] = switch_ssh.key_file
+        device["use_keys"] = switch_ssh.use_keys
+    return device
+
+
+def _acl_apply_commands(
+    acl_name: str, src_ip: str, ingress_interface: str
+) -> list[str]:
+    """IOS extended ACL: deny test source, then permit the rest."""
+    return [
+        f"ip access-list extended {acl_name}",
+        f" deny ip host {src_ip} any",
+        " permit ip any any",
+        "exit",
+        f"interface {ingress_interface}",
+        f" ip access-group {acl_name} in",
+    ]
+
+
+def _acl_remove_commands(acl_name: str, ingress_interface: str) -> list[str]:
+    """Detach ACL from interface, then remove the ACL definition."""
+    return [
+        f"interface {ingress_interface}",
+        f" no ip access-group {acl_name} in",
+        "exit",
+        f"no ip access-list extended {acl_name}",
+    ]
 
 
 def acl_enforcement(
     engine: ScapyEngine,
     config: FunctionalTestConfig | None = None,
     telemetry: TelemetryConfig | None = None,
-    pre_playbook: Path | None = None,
-    post_playbook: Path | None = None,
 ) -> dict[str, Any]:
-    """Verify ACL permit/deny rules produce correct forwarding behavior.
+    """Push an extended ACL that denies traffic from ``src_ip``, verify block, then remove.
 
-    When *pre_playbook* and *post_playbook* are provided, they are invoked
-    via ``ansible-playbook`` to push and roll back the test ACL
-    respectively.  Without them the test still runs the Scapy probes but
-    cannot configure the ACL automatically.
+    Uses Netmiko to apply ``deny ip host <src_ip> any`` on
+    ``acl_ingress_interface``, sends Scapy traffic matching that source,
+    expects zero frames on the analyzer while the ACL is active, then
+    removes the ACL and sends again to confirm traffic is restored.
     """
     cfg = config or FunctionalTestConfig()
     t0 = time.monotonic()
     evidence: dict[str, Any] = {}
 
+    switch_ssh = switch_ssh_from_secrets(
+        host=cfg.acl_switch_mgmt_ip, secrets=cfg.lab_secrets
+    )
+    apply_cmds = _acl_apply_commands(
+        cfg.acl_name, cfg.src_ip, cfg.acl_ingress_interface
+    )
+    remove_cmds = _acl_remove_commands(cfg.acl_name, cfg.acl_ingress_interface)
+
     with snapshot_telemetry(telemetry) as telem:
-        # Push ACL if playbook provided
-        if pre_playbook is not None:
-            evidence["pre_playbook"] = _run_playbook(pre_playbook)
-            if evidence["pre_playbook"]["returncode"] != 0:
-                raise FunctionalTestError(f"ACL pre-playbook failed: {pre_playbook}")
+        with ConnectHandler(**_netmiko_device(switch_ssh)) as conn:
+            conn.enable()
+            evidence["acl_apply"] = conn.send_config_set(apply_cmds)
 
         try:
-            # Permit probe — should arrive
-            permit_result = engine.send_and_capture(
+            blocked_result = engine.send_and_capture(
                 interface=cfg.interface,
                 src_mac=cfg.src_mac,
                 dst_mac=cfg.dst_mac,
                 src_ip=cfg.src_ip,
-                dst_ip=cfg.acl_permit_dst_ip,
+                dst_ip=cfg.dst_ip,
                 protocol=cfg.protocol,
                 size=cfg.frame_size,
                 count=1,
                 capture_timeout=cfg.capture_timeout,
             )
-            evidence["permit"] = permit_result
-            permit_received = (
-                permit_result["capture_result"].get("frames_received", 0) > 0
-            )
-
-            # Deny probe — should NOT arrive
-            deny_result = engine.send_and_capture(
-                interface=cfg.interface,
-                src_mac=cfg.src_mac,
-                dst_mac=cfg.dst_mac,
-                src_ip=cfg.src_ip,
-                dst_ip=cfg.acl_deny_dst_ip,
-                protocol=cfg.protocol,
-                size=cfg.frame_size,
-                count=1,
-                capture_timeout=cfg.capture_timeout,
-            )
-            evidence["deny"] = deny_result
-            deny_blocked = deny_result["capture_result"].get("frames_received", 0) == 0
+            evidence["while_acl_applied"] = blocked_result
+            blocked = blocked_result["capture_result"].get("frames_received", 0) == 0
         finally:
-            # Roll back ACL regardless of test outcome
-            if post_playbook is not None:
-                evidence["post_playbook"] = _run_playbook(post_playbook)
+            with ConnectHandler(**_netmiko_device(switch_ssh)) as conn:
+                conn.enable()
+                evidence["acl_remove"] = conn.send_config_set(remove_cmds)
 
-    passed = permit_received and deny_blocked
+        restored_result = engine.send_and_capture(
+            interface=cfg.interface,
+            src_mac=cfg.src_mac,
+            dst_mac=cfg.dst_mac,
+            src_ip=cfg.src_ip,
+            dst_ip=cfg.dst_ip,
+            protocol=cfg.protocol,
+            size=cfg.frame_size,
+            count=1,
+            capture_timeout=cfg.capture_timeout,
+        )
+        evidence["after_acl_removed"] = restored_result
+        restored = restored_result["capture_result"].get("frames_received", 0) > 0
+
+    passed = blocked and restored
     elapsed = time.monotonic() - t0
     return {
         "test": "acl_enforcement",
@@ -601,11 +632,11 @@ def acl_enforcement(
         "duration_sec": round(elapsed, 3),
         "switch_counter_delta": telem["switch_counter_delta"],
         "details": {
-            "permit_dst_ip": cfg.acl_permit_dst_ip,
-            "deny_dst_ip": cfg.acl_deny_dst_ip,
-            "permit_received": permit_received,
-            "deny_blocked": deny_blocked,
-            "ansible_configured": pre_playbook is not None,
+            "src_ip_denied": cfg.src_ip,
+            "acl_name": cfg.acl_name,
+            "ingress_interface": cfg.acl_ingress_interface,
+            "blocked_while_acl_applied": blocked,
+            "received_after_acl_removed": restored,
         },
         "evidence": evidence,
     }

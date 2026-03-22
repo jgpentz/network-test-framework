@@ -22,6 +22,7 @@ if _paramiko_mod is not None and not hasattr(_paramiko_mod, "__file__"):
     for key in [k for k in sys.modules if k.startswith("paramiko.")]:
         del sys.modules[key]
 
+from framework.lab_secrets import LabSecrets
 from framework.tests.functional import (
     FunctionalTestConfig,
     FunctionalTestError,
@@ -105,31 +106,32 @@ def _make_scapy_engine(**method_results: Any) -> MagicMock:
 
 
 @pytest.mark.parametrize(
-    ("vlan_match_count", "expected_pass"),
+    ("num_packets", "expected_pass"),
     [(0, True), (1, False), (5, False)],
     ids=["isolated", "leak-1", "leak-5"],
 )
-def test_vlan_isolation(vlan_match_count: int, expected_pass: bool) -> None:
+def test_vlan_isolation(num_packets: int, expected_pass: bool) -> None:
+    packets = (
+        [{**_CAPTURE_BASE["packets"][0]} for _ in range(num_packets)]
+        if num_packets
+        else []
+    )
+    capture = _send_and_capture_result(frames_received=num_packets, packets=packets)
     engine = MagicMock(spec=ScapyEngine)
-    engine.check_vlan_isolation.return_value = {
-        "status": "pass" if vlan_match_count == 0 else "fail",
-        "method": "check_vlan_isolation",
-        "timestamp": "2026-01-01T00:00:01+00:00",
-        "sent_vlan": 10,
-        "expected_vlan": 20,
-        "frames_received": vlan_match_count,
-        "vlan_match_count": vlan_match_count,
-        "vlan_mismatch_count": 0,
-        "evidence": _send_and_capture_result(),
-    }
-
-    result = vlan_isolation(engine)
+    engine.send_and_capture.return_value = capture
+    mock_conn = MagicMock()
+    mock_conn.send_config_set.return_value = ""
+    cfg = FunctionalTestConfig(lab_secrets=LabSecrets("u", "p"))
+    with patch("framework.tests.functional.ConnectHandler") as mock_connect:
+        mock_connect.return_value.__enter__.return_value = mock_conn
+        mock_connect.return_value.__exit__.return_value = None
+        result = vlan_isolation(engine, config=cfg)
 
     assert result["test"] == "vlan_isolation"
     assert result["passed"] is expected_pass
-    assert result["details"]["sent_vlan"] == 10
+    assert result["details"]["sent_vlan"] == 21
     assert result["details"]["expected_vlan"] == 20
-    engine.check_vlan_isolation.assert_called_once()
+    engine.send_and_capture.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -382,49 +384,67 @@ def test_stp_convergence_requires_telemetry() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_acl_permit_and_deny() -> None:
-    """Permit traffic arrives, deny traffic blocked."""
-    permit_capture = _send_and_capture_result(frames_received=1)
-    deny_capture = _send_and_capture_result(frames_received=0, packets=[])
+def test_acl_blocked_then_restored() -> None:
+    """With ACL: no frames; after removal: frames received."""
+    blocked = _send_and_capture_result(frames_received=0, packets=[])
+    restored = _send_and_capture_result(frames_received=1)
 
     engine = MagicMock(spec=ScapyEngine)
-    engine.send_and_capture.side_effect = [permit_capture, deny_capture]
+    engine.send_and_capture.side_effect = [blocked, restored]
 
-    result = acl_enforcement(engine)
+    mock_conn = MagicMock()
+    mock_conn.send_config_set.return_value = ""
+    cfg = FunctionalTestConfig(lab_secrets=LabSecrets("u", "p"))
+    with patch("framework.tests.functional.ConnectHandler") as mock_connect:
+        mock_connect.return_value.__enter__.return_value = mock_conn
+        mock_connect.return_value.__exit__.return_value = None
+        result = acl_enforcement(engine, config=cfg)
 
     assert result["test"] == "acl_enforcement"
     assert result["passed"] is True
-    assert result["details"]["permit_received"] is True
-    assert result["details"]["deny_blocked"] is True
-    assert result["details"]["ansible_configured"] is False
+    assert result["details"]["blocked_while_acl_applied"] is True
+    assert result["details"]["received_after_acl_removed"] is True
+    assert mock_conn.send_config_set.call_count == 2
 
 
-def test_acl_permit_blocked_fails() -> None:
-    """If permit traffic is blocked, test should fail."""
-    permit_capture = _send_and_capture_result(frames_received=0, packets=[])
-    deny_capture = _send_and_capture_result(frames_received=0, packets=[])
-
-    engine = MagicMock(spec=ScapyEngine)
-    engine.send_and_capture.side_effect = [permit_capture, deny_capture]
-
-    result = acl_enforcement(engine)
-
-    assert result["passed"] is False
-    assert result["details"]["permit_received"] is False
-
-
-def test_acl_deny_not_blocked_fails() -> None:
-    """If denied traffic leaks through, test should fail."""
-    permit_capture = _send_and_capture_result(frames_received=1)
-    deny_capture = _send_and_capture_result(frames_received=1)
+def test_acl_fails_if_traffic_leaks_under_acl() -> None:
+    """If frames still arrive while ACL is applied, test fails."""
+    leak = _send_and_capture_result(frames_received=1)
+    restored = _send_and_capture_result(frames_received=1)
 
     engine = MagicMock(spec=ScapyEngine)
-    engine.send_and_capture.side_effect = [permit_capture, deny_capture]
+    engine.send_and_capture.side_effect = [leak, restored]
 
-    result = acl_enforcement(engine)
+    mock_conn = MagicMock()
+    mock_conn.send_config_set.return_value = ""
+    cfg = FunctionalTestConfig(lab_secrets=LabSecrets("u", "p"))
+    with patch("framework.tests.functional.ConnectHandler") as mock_connect:
+        mock_connect.return_value.__enter__.return_value = mock_conn
+        mock_connect.return_value.__exit__.return_value = None
+        result = acl_enforcement(engine, config=cfg)
 
     assert result["passed"] is False
-    assert result["details"]["deny_blocked"] is False
+    assert result["details"]["blocked_while_acl_applied"] is False
+
+
+def test_acl_fails_if_not_restored_after_removal() -> None:
+    """If traffic does not return after ACL removal, test fails."""
+    blocked = _send_and_capture_result(frames_received=0, packets=[])
+    still_dead = _send_and_capture_result(frames_received=0, packets=[])
+
+    engine = MagicMock(spec=ScapyEngine)
+    engine.send_and_capture.side_effect = [blocked, still_dead]
+
+    mock_conn = MagicMock()
+    mock_conn.send_config_set.return_value = ""
+    cfg = FunctionalTestConfig(lab_secrets=LabSecrets("u", "p"))
+    with patch("framework.tests.functional.ConnectHandler") as mock_connect:
+        mock_connect.return_value.__enter__.return_value = mock_conn
+        mock_connect.return_value.__exit__.return_value = None
+        result = acl_enforcement(engine, config=cfg)
+
+    assert result["passed"] is False
+    assert result["details"]["received_after_acl_removed"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -442,24 +462,24 @@ _REQUIRED_KEYS = {
 }
 
 
+def _vlan_isolation_unified() -> dict[str, Any]:
+    engine = MagicMock(spec=ScapyEngine)
+    engine.send_and_capture.return_value = _send_and_capture_result(
+        frames_received=0, packets=[]
+    )
+    mock_conn = MagicMock()
+    mock_conn.send_config_set.return_value = ""
+    cfg = FunctionalTestConfig(lab_secrets=LabSecrets("u", "p"))
+    with patch("framework.tests.functional.ConnectHandler") as mock_connect:
+        mock_connect.return_value.__enter__.return_value = mock_conn
+        mock_connect.return_value.__exit__.return_value = None
+        return vlan_isolation(engine, config=cfg)
+
+
 @pytest.mark.parametrize(
     "run_test",
     [
-        lambda: vlan_isolation(
-            _make_scapy_engine(
-                check_vlan_isolation={
-                    "status": "pass",
-                    "method": "check_vlan_isolation",
-                    "timestamp": "T",
-                    "sent_vlan": 10,
-                    "expected_vlan": 20,
-                    "frames_received": 0,
-                    "vlan_match_count": 0,
-                    "vlan_mismatch_count": 0,
-                    "evidence": _send_and_capture_result(),
-                }
-            ),
-        ),
+        _vlan_isolation_unified,
         lambda: jumbo_frames(
             _make_scapy_engine(
                 send_and_capture=_send_and_capture_result(
