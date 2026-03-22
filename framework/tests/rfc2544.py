@@ -47,7 +47,7 @@ class RFC2544Config:
     """
 
     link_capacity_bps: float = 1_000_000_000
-    duration_sec: int = 30
+    duration_sec: int = 5
 
     # Throughput
     throughput_tolerance_pct: float = 0.5

@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from framework.lab_secrets import LabSecrets, load_lab_secrets
 from framework.telemetry.cisco_snmp import (
     get_mac_address_table_ssh,
     poll_interface_counters,
@@ -56,6 +57,20 @@ class SwitchSSHConfig:
     use_keys: bool = False
 
 
+def switch_ssh_from_secrets(
+    host: str,
+    secrets: LabSecrets | None = None,
+) -> SwitchSSHConfig:
+    """Build ``SwitchSSHConfig`` using ``load_lab_secrets()`` by default."""
+    s = secrets or load_lab_secrets()
+    return SwitchSSHConfig(
+        host=host,
+        username=s.username,
+        password=s.password,
+        secret=s.enable_secret,
+    )
+
+
 @dataclass
 class FunctionalTestConfig:
     """Lab-specific addressing and thresholds for all functional tests."""
@@ -69,7 +84,7 @@ class FunctionalTestConfig:
     frame_size: int = 128
 
     # VLAN Isolation
-    send_vlan: int = 10
+    send_vlan: int = 20
     expected_vlan: int = 20
 
     # MAC Learning
@@ -114,6 +129,7 @@ def vlan_isolation(
     ``status`` field to the unified ``passed`` boolean.
     """
     cfg = config or FunctionalTestConfig()
+
     t0 = time.monotonic()
 
     with snapshot_telemetry(telemetry) as telem:
