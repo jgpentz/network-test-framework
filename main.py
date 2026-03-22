@@ -6,7 +6,6 @@ from framework.tests.rfc2544 import throughput
 from framework.traffic.iperf3_engine import IPerf3Engine
 
 
-
 def main() -> None:
     ssh_options = ["-i", "/home/jimmy/.ssh/id_gen"]
     engine = IPerf3Engine(ssh_options=ssh_options)
